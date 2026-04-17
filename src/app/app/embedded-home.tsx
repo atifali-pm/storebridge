@@ -69,11 +69,14 @@ export function EmbeddedHome({ state, shop, host, installedAt }: Props) {
         <Card>
           <BlockStack gap="200">
             <Text as="h2" variant="headingMd">
-              What's next
+              Inventory sync
             </Text>
             <Text as="p">
-              Inventory sync between linked stores — configured in Phase 3.
+              Pair this store with another installed store and propagate inventory changes by SKU.
             </Text>
+            <Link url={`/app/links?shop=${encodeURIComponent(shop ?? "")}${host ? `&host=${encodeURIComponent(host)}` : ""}`} external={false}>
+              Manage store links
+            </Link>
           </BlockStack>
         </Card>
       </BlockStack>

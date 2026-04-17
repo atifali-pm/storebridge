@@ -12,6 +12,7 @@ const STATE_MAX_AGE = 10 * 60;
 
 export async function GET(req: NextRequest) {
   const shop = req.nextUrl.searchParams.get("shop");
+  const mergeToken = req.nextUrl.searchParams.get("merge_into") ?? "";
   if (!shop || !isValidShopDomain(shop)) {
     return NextResponse.json({ error: "invalid shop" }, { status: 400 });
   }
@@ -20,12 +21,12 @@ export async function GET(req: NextRequest) {
   const redirectUri = new URL("/api/auth/shopify/callback", env().SHOPIFY_APP_URL).toString();
   const authorizeUrl = buildAuthorizeUrl({ shop, state, redirectUri });
 
-  logger.info({ shop, event: "oauth.install.begin" });
+  logger.info({ shop, event: "oauth.install.begin", hasMergeToken: !!mergeToken });
 
   const res = NextResponse.redirect(authorizeUrl, 302);
   res.cookies.set({
     name: STATE_COOKIE,
-    value: `${shop}:${state}`,
+    value: `${shop}:${state}:${mergeToken}`,
     httpOnly: true,
     sameSite: "lax",
     secure: env().NODE_ENV === "production",

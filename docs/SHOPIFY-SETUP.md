@@ -75,3 +75,35 @@ SELECT tenant_id, action, resource_type, created_at FROM audit_logs ORDER BY cre
 - The redirect URL in Partner dashboard must match exactly — no trailing slash mismatch.
 - Dev store access tokens start with `shpat_` — stored encrypted in `shops.access_token_encrypted`.
 - Polaris 13 shows an unmet React 19 peer warning — cosmetic, does not affect runtime.
+
+## Phase 3: inventory sync
+
+### 1. Start the background worker
+Webhook processing and inventory sync run in a separate Node process:
+```bash
+pnpm worker
+```
+Keep it running alongside `pnpm dev`. It pulls jobs from BullMQ (Redis on port 6390) and pushes inventory updates to linked stores.
+
+### 2. Install on a second store
+Inside the embedded admin on your first store, go to **Store links** → **Connect another store**. Enter `<second-shop>.myshopify.com` and start the install. The callback flow carries a signed `merge_into` token so the new shop joins the same tenant.
+
+### 3. Create a sync link
+Once both stores are under one tenant, the **New link** card shows. Pick a source and target, click **Create link**. Links are SKU-matched and one-way.
+
+### 4. Test a sync end to end
+1. In the source store admin, change the inventory level for a product with a known SKU.
+2. Shopify fires `inventory_levels/update` → StoreBridge webhook.
+3. Worker picks it up, finds the matching SKU in the target store, sets inventory on the target's primary active location.
+4. Verify:
+   ```sql
+   SELECT source_shop_id, target_shop_id, status, sku, available, error_message, completed_at
+   FROM sync_jobs ORDER BY created_at DESC LIMIT 5;
+   ```
+5. Inventory on the target store should reflect the change within a few seconds.
+
+### Echo loop protection
+Phase 3 ships **one-way** links. Creating both A→B and B→A will loop. Future phases may add debouncing.
+
+### Uninstall
+If a merchant uninstalls the app, Shopify fires `app/uninstalled`. StoreBridge marks `shops.uninstalled_at` and the worker skips syncs involving uninstalled stores.

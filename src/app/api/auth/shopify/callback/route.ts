@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { tenants, shops } from "@/db/schema";
 import { env } from "@/lib/env";
@@ -9,6 +9,8 @@ import { verifyQueryHmac } from "@/lib/shopify/hmac";
 import { embeddedAdminUrl, exchangeCodeForToken, isValidShopDomain } from "@/lib/shopify/oauth";
 import { fetchShopInfo } from "@/lib/shopify/shop-info";
 import { recordAudit } from "@/lib/audit";
+import { verifyMergeToken } from "@/lib/merge-token";
+import { registerWebhooks } from "@/lib/shopify/webhooks-register";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -31,11 +33,25 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "hmac verification failed" }, { status: 401 });
   }
 
-  const cookieValue = req.cookies.get(STATE_COOKIE)?.value;
-  const expected = `${shop}:${state}`;
-  if (!cookieValue || !safeEqual(cookieValue, expected)) {
+  const cookieValue = req.cookies.get(STATE_COOKIE)?.value ?? "";
+  const cookieParts = cookieValue.split(":");
+  const cookieShop = cookieParts[0] ?? "";
+  const cookieState = cookieParts[1] ?? "";
+  const mergeTokenRaw = cookieParts.slice(2).join(":");
+  if (
+    !cookieShop ||
+    !cookieState ||
+    !safeEqual(cookieShop, shop) ||
+    !safeEqual(cookieState, state)
+  ) {
     logger.warn({ event: "oauth.callback.state_mismatch", shop });
     return NextResponse.json({ error: "state mismatch" }, { status: 403 });
+  }
+
+  const mergeTenantId = mergeTokenRaw ? verifyMergeToken(mergeTokenRaw)?.tenantId ?? null : null;
+  if (mergeTokenRaw && !mergeTenantId) {
+    logger.warn({ event: "oauth.callback.merge_token_invalid", shop });
+    return NextResponse.json({ error: "invalid merge token" }, { status: 403 });
   }
 
   const { accessToken, scope } = await exchangeCodeForToken({ shop, code });
@@ -60,15 +76,28 @@ export async function GET(req: NextRequest) {
       return { tenantId: prior.tenantId, shopId: prior.id, isNewInstall: false };
     }
 
-    const [tenant] = await tx
-      .insert(tenants)
-      .values({ name: info.name || shop, slug: shop })
-      .returning({ id: tenants.id });
+    let tenantIdForShop = mergeTenantId;
+    if (tenantIdForShop) {
+      const [tenantRow] = await tx
+        .select({ id: tenants.id })
+        .from(tenants)
+        .where(eq(tenants.id, tenantIdForShop))
+        .limit(1);
+      if (!tenantRow) tenantIdForShop = null;
+    }
+
+    if (!tenantIdForShop) {
+      const [tenant] = await tx
+        .insert(tenants)
+        .values({ name: info.name || shop, slug: shop })
+        .returning({ id: tenants.id });
+      tenantIdForShop = tenant.id;
+    }
 
     const [inserted] = await tx
       .insert(shops)
       .values({
-        tenantId: tenant.id,
+        tenantId: tenantIdForShop,
         shopDomain: shop,
         shopifyShopId: info.id || null,
         accessTokenEncrypted: encrypt(accessToken),
@@ -76,7 +105,7 @@ export async function GET(req: NextRequest) {
       })
       .returning({ id: shops.id });
 
-    return { tenantId: tenant.id, shopId: inserted.id, isNewInstall: true };
+    return { tenantId: tenantIdForShop, shopId: inserted.id, isNewInstall: true };
   });
 
   await recordAudit({
@@ -90,6 +119,18 @@ export async function GET(req: NextRequest) {
   });
 
   logger.info({ event: "oauth.callback.success", shop, tenantId, shopId, isNewInstall });
+
+  if (isNewInstall) {
+    const [shopRow] = await db.select().from(shops).where(eq(shops.id, shopId)).limit(1);
+    if (shopRow) {
+      void registerWebhooks(shopRow).catch((err) =>
+        logger.error({
+          event: "oauth.callback.register_webhooks_error",
+          err: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+  }
 
   const res = NextResponse.redirect(embeddedAdminUrl(shop), 302);
   res.cookies.delete(STATE_COOKIE);
