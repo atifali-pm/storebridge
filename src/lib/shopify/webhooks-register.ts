@@ -10,14 +10,14 @@ const TOPIC_TO_ENUM: Record<string, string> = {
 
 export const MANDATORY_TOPICS = Object.keys(TOPIC_TO_ENUM);
 
-function callbackUrlFor(_topic: string): string {
+function callbackUrl(): string {
   return new URL("/api/webhooks/shopify", env().SHOPIFY_APP_URL).toString();
 }
 
 export async function registerWebhooks(shop: Shop): Promise<void> {
   for (const topic of MANDATORY_TOPICS) {
     const topicEnum = TOPIC_TO_ENUM[topic];
-    const callbackUrl = callbackUrlFor(topic);
+    const cbUrl = callbackUrl();
 
     try {
       const data = await shopifyGraphQL<{
@@ -37,7 +37,7 @@ export async function registerWebhooks(shop: Shop): Promise<void> {
         `,
         variables: {
           topic: topicEnum,
-          input: { callbackUrl, format: "JSON" },
+          input: { callbackUrl: cbUrl, format: "JSON" },
         },
       });
 

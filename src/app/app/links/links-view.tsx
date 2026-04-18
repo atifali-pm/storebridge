@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import {
   Page,
   Card,
@@ -78,10 +78,7 @@ export function LinksView(props: Props) {
   const shopOptions = shops
     .filter((s) => !s.uninstalledAt)
     .map((s) => ({ label: s.shopDomain, value: s.id }));
-  const nameById = useMemo(
-    () => Object.fromEntries(shops.map((s) => [s.id, s.shopDomain])),
-    [shops],
-  );
+  const nameById = Object.fromEntries(shops.map((s) => [s.id, s.shopDomain]));
 
   return (
     <Page title="Store links" subtitle={currentShop}>
@@ -167,7 +164,8 @@ function ConnectShopCard({ mergeToken, currentShop }: { mergeToken: string; curr
     }
     const url = `/api/auth/shopify/install?shop=${encodeURIComponent(trimmed)}&merge_into=${encodeURIComponent(mergeToken)}`;
     if (typeof window !== "undefined") {
-      window.top ? (window.top.location.href = url) : (window.location.href = url);
+      const target = window.top ?? window;
+      target.location.href = url;
     }
   }
 

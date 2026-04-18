@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { shops, storeLinks, auditLogs } from "@/db/schema";
 import { withTenant, type TenantTx } from "@/db/tenant-scope";

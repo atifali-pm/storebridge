@@ -1,5 +1,4 @@
 import { sql } from "drizzle-orm";
-import type { PgTransaction } from "drizzle-orm/pg-core";
 import { db } from "./client";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
