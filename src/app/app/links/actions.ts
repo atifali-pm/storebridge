@@ -3,20 +3,38 @@
 import { revalidatePath } from "next/cache";
 import { and, eq } from "drizzle-orm";
 import { z } from "zod";
-import { db } from "@/db/client";
-import { shops, storeLinks } from "@/db/schema";
-import { recordAudit } from "@/lib/audit";
+import { shops, storeLinks, auditLogs } from "@/db/schema";
+import { withTenant, type TenantTx } from "@/db/tenant-scope";
 import { logger } from "@/lib/logger";
 
 const UUID = z.string().uuid();
 
-async function assertShopInTenant(shopId: string, tenantId: string): Promise<void> {
-  const [row] = await db
+async function assertShopInTenant(tx: TenantTx, shopId: string): Promise<void> {
+  const [row] = await tx
     .select({ id: shops.id })
     .from(shops)
-    .where(and(eq(shops.id, shopId), eq(shops.tenantId, tenantId)))
+    .where(eq(shops.id, shopId))
     .limit(1);
   if (!row) throw new Error("shop not found in tenant");
+}
+
+async function recordAuditInTx(
+  tx: TenantTx,
+  event: {
+    tenantId: string;
+    action: string;
+    resourceType: string;
+    resourceId?: string | null;
+    meta?: Record<string, unknown>;
+  },
+): Promise<void> {
+  await tx.insert(auditLogs).values({
+    tenantId: event.tenantId,
+    action: event.action,
+    resourceType: event.resourceType,
+    resourceId: event.resourceId ?? null,
+    meta: event.meta ?? {},
+  });
 }
 
 const CreateLinkSchema = z.object({
@@ -38,21 +56,23 @@ export async function createLinkAction(formData: FormData): Promise<{ error?: st
   const { tenantId, sourceShopId, targetShopId, currentShop } = parsed.data;
   if (sourceShopId === targetShopId) return { error: "source and target must differ" };
 
-  await assertShopInTenant(sourceShopId, tenantId);
-  await assertShopInTenant(targetShopId, tenantId);
-
   try {
-    await db.insert(storeLinks).values({ tenantId, sourceShopId, targetShopId });
-    await recordAudit({
-      tenantId,
-      action: "link.create",
-      resourceType: "store_link",
-      meta: { sourceShopId, targetShopId },
+    await withTenant(tenantId, async (tx) => {
+      await assertShopInTenant(tx, sourceShopId);
+      await assertShopInTenant(tx, targetShopId);
+      await tx.insert(storeLinks).values({ tenantId, sourceShopId, targetShopId });
+      await recordAuditInTx(tx, {
+        tenantId,
+        action: "link.create",
+        resourceType: "store_link",
+        meta: { sourceShopId, targetShopId },
+      });
     });
     logger.info({ event: "link.create", tenantId, sourceShopId, targetShopId });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (msg.includes("store_links_pair_unique")) return { error: "link already exists" };
+    if (msg.includes("shop not found in tenant")) return { error: "shop not in tenant" };
     logger.error({ event: "link.create_error", err: msg });
     return { error: "failed to create link" };
   }
@@ -78,16 +98,18 @@ export async function toggleLinkAction(formData: FormData): Promise<{ error?: st
   if (!parsed.success) return { error: "invalid form" };
 
   const enabled = parsed.data.enabled === "true";
-  await db
-    .update(storeLinks)
-    .set({ enabled, updatedAt: new Date() })
-    .where(and(eq(storeLinks.id, parsed.data.linkId), eq(storeLinks.tenantId, parsed.data.tenantId)));
+  await withTenant(parsed.data.tenantId, async (tx) => {
+    await tx
+      .update(storeLinks)
+      .set({ enabled, updatedAt: new Date() })
+      .where(eq(storeLinks.id, parsed.data.linkId));
 
-  await recordAudit({
-    tenantId: parsed.data.tenantId,
-    action: enabled ? "link.enable" : "link.disable",
-    resourceType: "store_link",
-    resourceId: parsed.data.linkId,
+    await recordAuditInTx(tx, {
+      tenantId: parsed.data.tenantId,
+      action: enabled ? "link.enable" : "link.disable",
+      resourceType: "store_link",
+      resourceId: parsed.data.linkId,
+    });
   });
 
   revalidatePath(`/app/links?shop=${encodeURIComponent(parsed.data.currentShop)}`);
@@ -108,15 +130,14 @@ export async function deleteLinkAction(formData: FormData): Promise<{ error?: st
   });
   if (!parsed.success) return { error: "invalid form" };
 
-  await db
-    .delete(storeLinks)
-    .where(and(eq(storeLinks.id, parsed.data.linkId), eq(storeLinks.tenantId, parsed.data.tenantId)));
-
-  await recordAudit({
-    tenantId: parsed.data.tenantId,
-    action: "link.delete",
-    resourceType: "store_link",
-    resourceId: parsed.data.linkId,
+  await withTenant(parsed.data.tenantId, async (tx) => {
+    await tx.delete(storeLinks).where(eq(storeLinks.id, parsed.data.linkId));
+    await recordAuditInTx(tx, {
+      tenantId: parsed.data.tenantId,
+      action: "link.delete",
+      resourceType: "store_link",
+      resourceId: parsed.data.linkId,
+    });
   });
 
   revalidatePath(`/app/links?shop=${encodeURIComponent(parsed.data.currentShop)}`);

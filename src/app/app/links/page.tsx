@@ -1,6 +1,7 @@
-import { and, desc, eq } from "drizzle-orm";
+import { desc, eq } from "drizzle-orm";
 import { db } from "@/db/client";
 import { shops, storeLinks } from "@/db/schema";
+import { withTenant } from "@/db/tenant-scope";
 import { isValidShopDomain } from "@/lib/shopify/oauth";
 import { signMergeToken } from "@/lib/merge-token";
 import { LinksView } from "./links-view";
@@ -24,30 +25,32 @@ export default async function LinksPage({ searchParams }: Props) {
     return <LinksView state="not_installed" shop={shop} host={host} />;
   }
 
-  const tenantShops = await db
-    .select({
-      id: shops.id,
-      shopDomain: shops.shopDomain,
-      installedAt: shops.installedAt,
-      uninstalledAt: shops.uninstalledAt,
-    })
-    .from(shops)
-    .where(eq(shops.tenantId, currentShop.tenantId))
-    .orderBy(desc(shops.installedAt));
+  const { tenantShops, links } = await withTenant(currentShop.tenantId, async (tx) => {
+    const tenantShops = await tx
+      .select({
+        id: shops.id,
+        shopDomain: shops.shopDomain,
+        installedAt: shops.installedAt,
+        uninstalledAt: shops.uninstalledAt,
+      })
+      .from(shops)
+      .orderBy(desc(shops.installedAt));
 
-  const links = await db
-    .select({
-      id: storeLinks.id,
-      sourceShopId: storeLinks.sourceShopId,
-      targetShopId: storeLinks.targetShopId,
-      enabled: storeLinks.enabled,
-      matchBy: storeLinks.matchBy,
-      lastSyncAt: storeLinks.lastSyncAt,
-      createdAt: storeLinks.createdAt,
-    })
-    .from(storeLinks)
-    .where(eq(storeLinks.tenantId, currentShop.tenantId))
-    .orderBy(desc(storeLinks.createdAt));
+    const links = await tx
+      .select({
+        id: storeLinks.id,
+        sourceShopId: storeLinks.sourceShopId,
+        targetShopId: storeLinks.targetShopId,
+        enabled: storeLinks.enabled,
+        matchBy: storeLinks.matchBy,
+        lastSyncAt: storeLinks.lastSyncAt,
+        createdAt: storeLinks.createdAt,
+      })
+      .from(storeLinks)
+      .orderBy(desc(storeLinks.createdAt));
+
+    return { tenantShops, links };
+  });
 
   const mergeToken = signMergeToken(currentShop.tenantId);
 

@@ -16,6 +16,7 @@
     "db:down": "docker compose down",
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:isolation": "vitest run --config vitest.isolation.config.ts",
     "worker": "tsx src/workers/index.ts"
   },
   "dependencies": {
