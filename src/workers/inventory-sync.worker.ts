@@ -131,7 +131,11 @@ async function handleJob(job: Job<InventorySyncJobData>): Promise<void> {
         continue;
       }
 
-      const targetLocationGid = await fetchPrimaryLocationId({ shop: targetShop });
+      // Use the location where the target item is actually stocked. Falling
+      // back to "primary" is a guess; if the item lives at a different
+      // location, inventorySetOnHandQuantities returns ITEM_NOT_STOCKED_AT_LOCATION.
+      const targetLocationGid =
+        targetItem.stockedLocationGid ?? (await fetchPrimaryLocationId({ shop: targetShop }));
 
       await setInventoryOnHand({
         shop: targetShop,

@@ -5,6 +5,13 @@ export interface InventoryItemInfo {
   id: string;
   sku: string;
   tracked: boolean;
+  /**
+   * Location GID where this item is currently stocked. Picked from the first
+   * inventoryLevel returned. Null if the item has no inventory levels yet
+   * (item not stocked anywhere). Worker uses this to avoid guessing a
+   * location that doesn't actually have the item.
+   */
+  stockedLocationGid: string | null;
 }
 
 export async function fetchInventoryItemBySku(opts: {
@@ -14,21 +21,43 @@ export async function fetchInventoryItemBySku(opts: {
   if (!opts.sku) return null;
   const data = await shopifyGraphQL<{
     inventoryItems: {
-      edges: Array<{ node: { id: string; sku: string; tracked: boolean } }>;
+      edges: Array<{
+        node: {
+          id: string;
+          sku: string;
+          tracked: boolean;
+          inventoryLevels: { edges: Array<{ node: { location: { id: string } } }> };
+        };
+      }>;
     };
   }>({
     shop: opts.shop,
     query: /* GraphQL */ `
       query ItemBySku($query: String!) {
         inventoryItems(first: 1, query: $query) {
-          edges { node { id sku tracked } }
+          edges {
+            node {
+              id
+              sku
+              tracked
+              inventoryLevels(first: 1) {
+                edges { node { location { id } } }
+              }
+            }
+          }
         }
       }
     `,
     variables: { query: `sku:${opts.sku}` },
   });
   const node = data.inventoryItems.edges[0]?.node;
-  return node ? { id: node.id, sku: node.sku, tracked: node.tracked } : null;
+  if (!node) return null;
+  return {
+    id: node.id,
+    sku: node.sku,
+    tracked: node.tracked,
+    stockedLocationGid: node.inventoryLevels.edges[0]?.node.location.id ?? null,
+  };
 }
 
 export async function fetchInventoryItemById(opts: {
@@ -37,18 +66,36 @@ export async function fetchInventoryItemById(opts: {
 }): Promise<InventoryItemInfo | null> {
   const gid = `gid://shopify/InventoryItem/${opts.inventoryItemId}`;
   const data = await shopifyGraphQL<{
-    inventoryItem: { id: string; sku: string; tracked: boolean } | null;
+    inventoryItem: {
+      id: string;
+      sku: string;
+      tracked: boolean;
+      inventoryLevels: { edges: Array<{ node: { location: { id: string } } }> };
+    } | null;
   }>({
     shop: opts.shop,
     query: /* GraphQL */ `
       query Item($id: ID!) {
-        inventoryItem(id: $id) { id sku tracked }
+        inventoryItem(id: $id) {
+          id
+          sku
+          tracked
+          inventoryLevels(first: 1) {
+            edges { node { location { id } } }
+          }
+        }
       }
     `,
     variables: { id: gid },
   });
   const node = data.inventoryItem;
-  return node ? { id: node.id, sku: node.sku, tracked: node.tracked } : null;
+  if (!node) return null;
+  return {
+    id: node.id,
+    sku: node.sku,
+    tracked: node.tracked,
+    stockedLocationGid: node.inventoryLevels.edges[0]?.node.location.id ?? null,
+  };
 }
 
 export async function fetchPrimaryLocationId(opts: { shop: Shop }): Promise<string> {
