@@ -1,0 +1,23 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "498b3c359c89cdde3cece2d1ed4004db"
+application_url = "https://storebridge-production.up.railway.app/app"
+embedded = true
+name = "storebridge"
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_products,write_products,read_inventory,write_inventory,read_locations"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [
+  "https://storebridge-production.up.railway.app/api/auth/shopify/callback"
+]
+
+[webhooks]
+api_version = "2025-01"
+
+[pos]
+embedded = true
