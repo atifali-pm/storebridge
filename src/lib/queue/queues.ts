@@ -1,7 +1,7 @@
 import { Queue, type JobsOptions } from "bullmq";
 import { getRedis } from "./connection";
 
-export const QUEUE_INVENTORY_SYNC = "storebridge:inventory-sync";
+export const QUEUE_INVENTORY_SYNC = "storebridge-inventory-sync";
 
 export interface InventorySyncJobData {
   webhookEventId: string;

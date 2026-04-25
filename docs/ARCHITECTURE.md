@@ -20,7 +20,7 @@ StoreBridge is a multi-tenant Shopify app that synchronizes inventory between tw
 | Component | Responsibility |
 |---|---|
 | **Next.js app** (App Router) | Public landing, embedded merchant admin at `/app`, OAuth routes, webhook handler, `/api/health` |
-| **BullMQ worker** (`pnpm worker`) | Consumes the `storebridge:inventory-sync` queue and pushes inventory updates to target shops |
+| **BullMQ worker** (`pnpm worker`) | Consumes the `storebridge-inventory-sync` queue and pushes inventory updates to target shops |
 | **Postgres 16** | All tenant data, with RLS policies scoping rows to the current tenant |
 | **Redis 7** | BullMQ queue backing store |
 | **Shopify Admin API** | Source of webhooks, target of inventory updates (GraphQL) |
@@ -209,7 +209,7 @@ sequenceDiagram
 
 ## Queue architecture
 
-- **Queue name:** `storebridge:inventory-sync`
+- **Queue name:** `storebridge-inventory-sync`
 - **Backend:** Redis (local port 6390 in dev, Railway free-tier Redis in prod)
 - **Concurrency:** 4 workers per process (`CONCURRENCY` in `src/workers/inventory-sync.worker.ts`)
 - **Retries:** 5 attempts, exponential backoff starting at 1 s
