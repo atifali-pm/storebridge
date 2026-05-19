@@ -151,6 +151,14 @@ docs/
   DEPLOYMENT.md                 Railway deploy runbook
 ```
 
+## Screenshots
+
+![Shopify Partner app config](screenshots/00-partner-app-config.png)
+![Shopify install consent screen](screenshots/01-shopify-install-consent.png)
+![Embedded admin, empty state](screenshots/02-embedded-admin-empty.png)
+![Merchant merge flow](screenshots/03-merchant-merge-flow.png)
+![Store pairing active](screenshots/04-store-pairing-active.png)
+
 ## Status and roadmap
 
 | Phase | Scope | Status |
